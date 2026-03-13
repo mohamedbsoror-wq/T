@@ -1,14 +1,15 @@
 import sqlite3
 import datetime
 import random
+import os  # مكتبة التعامل مع نظام التشغيل
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 
 # ==========================================================
-# ⚙️ الإعدادات الأساسية
+# ⚙️ الإعدادات الآمنة (هذه القيم سيتم سحبها من الاستضافة)
 # ==========================================================
-ADMIN_ID = 8206351547
-TOKEN = "8717955333:AAHx_rCg9CGYcuWVrR2sILp99sS91cpgmgA"
+TOKEN = os.getenv("BOT_TOKEN")  # سيسحب التوكن من الاستضافة
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # سيسحب أيدي الأدمن من الاستضافة
 BOT_USERNAME = "Scripts127_bot" 
 CHANNEL_ID = "@i_71j"           
 
@@ -78,7 +79,6 @@ def main_keyboard(user_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # رسالة الاشتراك الإجباري المطلوبة
     if not await is_subscribed(context, user_id):
         txt = (
             "🚸| عذراً عزيزي..\n"
@@ -96,7 +96,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         conn.close()
         user = {"balance": 0}
-        # نظام الدعوة
         if context.args and context.args[0].isdigit():
             inviter_id = int(context.args[0])
             inviter = get_user(inviter_id)
@@ -140,13 +139,11 @@ async def make_code_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎫 ارسل الآن **اسم الكود**:")
 
 # ==========================================================
-# 📩 معالج الرسائل الذكي
+# 📩 معالج الرسائل
 # ==========================================================
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
-
-    # نظام صنع الكود بالخطوات
     if user_id == ADMIN_ID and context.user_data.get('making_code'):
         step = context.user_data.get('step')
         if step == 'name':
@@ -167,30 +164,23 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: await update.message.reply_text("❌ خطأ في البيانات!")
             context.user_data['making_code'] = False
         return
-
-    # نظام إدخال الكود للمستخدم
     if context.user_data.get('waiting_for_code'):
         context.user_data['waiting_for_code'] = False
         user = get_user(user_id)
         conn = sqlite3.connect('database.db'); cursor = conn.cursor()
         cursor.execute("SELECT amount, limit_use, expiry_time FROM codes WHERE code_text = ?", (text,))
         res = cursor.fetchone()
-        if not res: return await update.message.reply_text("❌ الكود خاطئ أو انتهى، انتظر أكواد جديدة!")
-        
+        if not res: return await update.message.reply_text("❌ الكود خاطئ أو انتهى!")
         amt, limit, exp = res
         update_user(user_id, user['balance'] + amt)
         cursor.execute("INSERT INTO code_history VALUES (?, ?)", (user_id, text))
         if limit - 1 <= 0: cursor.execute("DELETE FROM codes WHERE code_text = ?", (text,))
         else: cursor.execute("UPDATE codes SET limit_use = ? WHERE code_text = ?", (limit-1, text))
         conn.commit(); conn.close()
-        await update.message.reply_text(f"🎉 مبروك حصلت على {amt} كوينز عملة البوت!")
+        await update.message.reply_text(f"🎉 مبروك حصلت على {amt} كوينز!")
 
-# ==========================================================
-# 🔘 معالج الأزرار
-# ==========================================================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; user_id = query.from_user.id; user = get_user(user_id); await query.answer()
-
     if query.data == 'back':
         await query.edit_message_text(f"👋 <b>القائمة الرئيسية</b>\n💰 رصيدك: <code>{user['balance']}</code> كوينز", reply_markup=main_keyboard(user_id), parse_mode='HTML')
     elif query.data == 'daily_gift':
@@ -214,13 +204,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🛒 المتجر:", reply_markup=InlineKeyboardMarkup(btns))
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("bc", broadcast))
-    app.add_handler(CommandHandler("add", add_balance))
-    app.add_handler(CommandHandler("make_code", make_code_start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
-    print("🚀 البوت المتكامل يعمل الآن بنجاح!")
-    app.run_polling()
-
+    if not TOKEN:
+        print("❌ خطأ: التوكن غير موجود! تأكد من ضبط الـ Environment Variables.")
+    else:
+        app = ApplicationBuilder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("bc", broadcast))
+        app.add_handler(CommandHandler("add", add_balance))
+        app.add_handler(CommandHandler("make_code", make_code_start))
+        app.add_handler(CallbackQueryHandler(button_handler))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
+        print("🚀 البوت الآمن يعمل الآن...")
+        app.run_polling()
